@@ -180,6 +180,7 @@ static void print_model_runtime(FILE *fp, const help_colors *c,
         opt(fp, c, "--warm-weights", "Touch mapped tensor pages at startup to reduce first-use stalls.");
         if (tool == DS4_HELP_DS4 || tool == DS4_HELP_BENCH) {
             opt(fp, c, "--expert-profile FILE", "Metal-only: write routed expert locality/cache simulation JSON.");
+            opt(fp, c, "--expert-trace FILE", "Metal-only: write routed expert selections as JSONL.");
         }
     }
     fputc('\n', fp);
@@ -249,6 +250,7 @@ static void print_cli_diagnostics(FILE *fp, const help_colors *c) {
     opt(fp, c, "--dump-logprobs FILE", "Write greedy continuation top-logprobs as JSON.");
     opt(fp, c, "--logprobs-top-k N", "Alternatives stored by --dump-logprobs. Default: 20");
     opt(fp, c, "--expert-profile FILE", "Metal-only: write routed expert locality/cache simulation JSON.");
+    opt(fp, c, "--expert-trace FILE", "Metal-only: write routed expert selections as JSONL.");
     opt(fp, c, "--perplexity-file FILE", "Score raw text with teacher-forced NLL.");
     opt(fp, c, "--imatrix-dataset FILE", "Rendered prompt dataset for imatrix collection.");
     opt(fp, c, "--imatrix-out FILE", "Write llama-compatible routed-MoE imatrix .dat.");

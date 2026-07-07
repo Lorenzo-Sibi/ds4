@@ -29,6 +29,7 @@ typedef struct {
     const char *system;
     const char *csv_path;
     const char *expert_profile_path;
+    const char *expert_trace_path;
     ds4_backend backend;
     int threads;
     int ctx_start;
@@ -228,6 +229,8 @@ static bench_config parse_options(int argc, char **argv) {
             c.dump_frontier_logits_dir = need_arg(&i, argc, argv, arg);
         } else if (!strcmp(arg, "--expert-profile")) {
             c.expert_profile_path = need_arg(&i, argc, argv, arg);
+        } else if (!strcmp(arg, "--expert-trace")) {
+            c.expert_trace_path = need_arg(&i, argc, argv, arg);
         } else if (!strcmp(arg, "-t") || !strcmp(arg, "--threads")) {
             c.threads = parse_int(need_arg(&i, argc, argv, arg), arg);
         } else if (!strcmp(arg, "--backend")) {
@@ -523,6 +526,7 @@ int main(int argc, char **argv) {
         .ssd_streaming = cfg.ssd_streaming,
         .ssd_streaming_cold = cfg.ssd_streaming_cold,
         .expert_profile_path = cfg.expert_profile_path,
+        .expert_trace_path = cfg.expert_trace_path,
         .distributed = cfg.dist,
     };
     char dist_err[256];

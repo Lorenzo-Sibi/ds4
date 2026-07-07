@@ -1245,6 +1245,7 @@ first answer:
 ./ds4 --dump-tokens -p "..."
 ./ds4 --dump-logprobs /tmp/out.json --logprobs-top-k 20 --temp 0 -p "..."
 ./ds4 --dump-logits /tmp/logits.json --metal --nothink --prompt-file prompt.txt
+./ds4 --expert-trace /tmp/routes.jsonl --metal --temp 0 --prompt-file prompt.txt
 ./ds4-server --trace /tmp/ds4-trace.txt ...
 ```
 
@@ -1257,3 +1258,6 @@ first answer:
   logit/model issues.
 - `ds4-server --trace` writes the rendered prompts, cache decisions, generated
   text, and tool-parser events for a whole agent session.
+- `--expert-trace` writes JSONL routed-expert selections for Metal decode
+  tokens. Records grouped by `pos` can be joined offline with the following
+  token to test whether a routing signature improves next-token prediction.

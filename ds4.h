@@ -101,6 +101,7 @@ typedef struct {
     float mtp_margin;
     const char *directional_steering_file;
     const char *expert_profile_path;
+    const char *expert_trace_path;
     float directional_steering_attn;
     float directional_steering_ffn;
     int power_percent;

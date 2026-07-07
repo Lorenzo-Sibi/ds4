@@ -770,6 +770,8 @@ typedef struct {
     bool active;
     char *path;
     char *hotlist_path;
+    char *trace_path;
+    FILE *trace_fp;
     char model_name[64];
     uint32_t n_layer;
     uint32_t n_expert;
@@ -850,11 +852,20 @@ static void ds4_json_write_string(FILE *fp, const char *s) {
     fputc('"', fp);
 }
 
-static void ds4_expert_profile_init(const char *path, const char *hotlist_path) {
-    if ((!path || !path[0]) && (!hotlist_path || !hotlist_path[0])) return;
+static void ds4_expert_profile_init(const char *path,
+                                    const char *hotlist_path,
+                                    const char *trace_path) {
+    if ((!path || !path[0]) &&
+        (!hotlist_path || !hotlist_path[0]) &&
+        (!trace_path || !trace_path[0]))
+    {
+        return;
+    }
     if (g_expert_profile.active) {
         free(g_expert_profile.path);
         free(g_expert_profile.hotlist_path);
+        free(g_expert_profile.trace_path);
+        if (g_expert_profile.trace_fp) fclose(g_expert_profile.trace_fp);
         memset(&g_expert_profile, 0, sizeof(g_expert_profile));
     }
 
@@ -862,6 +873,25 @@ static void ds4_expert_profile_init(const char *path, const char *hotlist_path) 
     if (path && path[0]) g_expert_profile.path = ds4_strdup(path);
     if (hotlist_path && hotlist_path[0]) {
         g_expert_profile.hotlist_path = ds4_strdup(hotlist_path);
+    }
+    if (trace_path && trace_path[0]) {
+        g_expert_profile.trace_path = ds4_strdup(trace_path);
+        g_expert_profile.trace_fp = fopen(trace_path, "wb");
+        if (!g_expert_profile.trace_fp) {
+            fprintf(stderr,
+                    "ds4: failed to open expert trace output %s: %s\n",
+                    trace_path,
+                    strerror(errno));
+            free(g_expert_profile.trace_path);
+            g_expert_profile.trace_path = NULL;
+        }
+    }
+    if (!g_expert_profile.path &&
+        !g_expert_profile.hotlist_path &&
+        !g_expert_profile.trace_fp)
+    {
+        memset(&g_expert_profile, 0, sizeof(g_expert_profile));
+        return;
     }
     snprintf(g_expert_profile.model_name,
              sizeof(g_expert_profile.model_name),
@@ -877,9 +907,11 @@ static void ds4_expert_profile_init(const char *path, const char *hotlist_path) 
         g_expert_profile.caps[g_expert_profile.n_caps++] = cap;
     }
     fprintf(stderr,
-            "ds4: Metal expert locality profiler active (profile: %s, hotlist: %s)\n",
+            "ds4: Metal expert locality profiler active "
+            "(profile: %s, hotlist: %s, trace: %s)\n",
             g_expert_profile.path ? g_expert_profile.path : "disabled",
-            g_expert_profile.hotlist_path ? g_expert_profile.hotlist_path : "disabled");
+            g_expert_profile.hotlist_path ? g_expert_profile.hotlist_path : "disabled",
+            g_expert_profile.trace_path ? g_expert_profile.trace_path : "disabled");
 }
 
 static void ds4_expert_profile_cache_use(
@@ -918,14 +950,50 @@ static void ds4_expert_profile_cache_use(
     entries[0] = expert;
 }
 
+static void ds4_expert_profile_write_trace(
+        uint32_t      il,
+        uint32_t      pos,
+        int           token,
+        const int32_t selected[DS4_MAX_EXPERT_USED],
+        const float   weights[DS4_MAX_EXPERT_USED],
+        bool          is_hash) {
+    ds4_expert_profile *p = &g_expert_profile;
+    FILE *fp = p->trace_fp;
+    if (!fp) return;
+
+    fprintf(fp,
+            "{\"type\":\"route\",\"model\":");
+    ds4_json_write_string(fp, p->model_name);
+    fprintf(fp,
+            ",\"pos\":%u,\"token\":%d,\"layer\":%u,\"hash_router\":%s,"
+            "\"selected\":[",
+            pos,
+            token,
+            il,
+            is_hash ? "true" : "false");
+    for (uint32_t i = 0; i < p->n_expert_used; i++) {
+        if (i) fputc(',', fp);
+        fprintf(fp, "%d", selected[i]);
+    }
+    fputs("],\"weights\":[", fp);
+    for (uint32_t i = 0; i < p->n_expert_used; i++) {
+        if (i) fputc(',', fp);
+        fprintf(fp, "%.9g", weights[i]);
+    }
+    fputs("]}\n", fp);
+}
+
 static void ds4_expert_profile_record(
         uint32_t      il,
         uint32_t      pos,
+        int           token,
         const int32_t selected[DS4_MAX_EXPERT_USED],
         const float   weights[DS4_MAX_EXPERT_USED],
         bool          is_hash) {
     ds4_expert_profile *p = &g_expert_profile;
     if (!p->active || il >= p->n_layer) return;
+
+    ds4_expert_profile_write_trace(il, pos, token, selected, weights, is_hash);
 
     p->layer_records[il]++;
     p->total_records++;
@@ -1195,9 +1263,24 @@ static void ds4_expert_profile_close(void) {
         }
     }
     ds4_expert_profile_write_hotlist_file(p);
+    if (p->trace_fp) {
+        if (fclose(p->trace_fp) != 0) {
+            fprintf(stderr,
+                    "ds4: failed to close expert trace output %s: %s\n",
+                    p->trace_path ? p->trace_path : "(unknown)",
+                    strerror(errno));
+        } else if (p->trace_path) {
+            fprintf(stderr,
+                    "ds4: wrote Metal expert trace to %s "
+                    "(%" PRIu64 " layer records)\n",
+                    p->trace_path,
+                    p->total_records);
+        }
+    }
 
     free(p->path);
     free(p->hotlist_path);
+    free(p->trace_path);
     memset(p, 0, sizeof(*p));
 }
 
@@ -14799,7 +14882,8 @@ static bool metal_graph_profile_router_selection(
         ds4_gpu_graph            *g,
         const ds4_layer_weights  *layer,
         uint32_t                  il,
-        uint32_t                  pos) {
+        uint32_t                  pos,
+        int                       token) {
     if (!g_expert_profile.active) return true;
     if (!g || !layer || !g->router_selected || !g->router_weights) return false;
 
@@ -14833,6 +14917,7 @@ static bool metal_graph_profile_router_selection(
 
     ds4_expert_profile_record(il,
                               pos,
+                              (int)token,
                               selected,
                               weights,
                               layer->ffn_gate_tid2eid != NULL);
@@ -15586,7 +15671,7 @@ static bool metal_graph_encode_decode_layer(
                                                                    g);
     }
     DS4_METAL_PROFILE_DECODE_STAGE("router");
-    if (ok) ok = metal_graph_profile_router_selection(g, layer, il, pos);
+    if (ok) ok = metal_graph_profile_router_selection(g, layer, il, pos, token);
     if (ok) {
         metal_graph_debug_dump_tensor("ffn_moe_logits", g->router_logits, DS4_N_EXPERT, il, pos);
         metal_graph_debug_dump_tensor("ffn_moe_probs", g->router_probs, DS4_N_EXPERT, il, pos);
@@ -25618,13 +25703,20 @@ int ds4_engine_open(ds4_engine **out, const ds4_engine_options *opt) {
         expert_profile_path = getenv("DS4_EXPERT_PROFILE");
     }
     const char *expert_hotlist_path = getenv("DS4_EXPERT_HOTLIST");
+    const char *expert_trace_path = opt->expert_trace_path;
+    if (!expert_trace_path || !expert_trace_path[0]) {
+        expert_trace_path = getenv("DS4_EXPERT_TRACE");
+    }
     if ((expert_profile_path && expert_profile_path[0]) ||
-        (expert_hotlist_path && expert_hotlist_path[0])) {
+        (expert_hotlist_path && expert_hotlist_path[0]) ||
+        (expert_trace_path && expert_trace_path[0])) {
         if (e->backend == DS4_BACKEND_METAL) {
-            ds4_expert_profile_init(expert_profile_path, expert_hotlist_path);
+            ds4_expert_profile_init(expert_profile_path,
+                                    expert_hotlist_path,
+                                    expert_trace_path);
         } else {
             fprintf(stderr,
-                    "ds4: expert profile/hotlist is Metal-only for now; ignoring for %s backend\n",
+                    "ds4: expert profile/hotlist/trace is Metal-only for now; ignoring for %s backend\n",
                     ds4_backend_name(e->backend));
         }
     }

@@ -1522,6 +1522,8 @@ static cli_config parse_options(int argc, char **argv) {
             c.engine.directional_steering_file = need_arg(&i, argc, argv, arg);
         } else if (!strcmp(arg, "--expert-profile")) {
             c.engine.expert_profile_path = need_arg(&i, argc, argv, arg);
+        } else if (!strcmp(arg, "--expert-trace")) {
+            c.engine.expert_trace_path = need_arg(&i, argc, argv, arg);
         } else if (!strcmp(arg, "--dir-steering-ffn")) {
             c.engine.directional_steering_ffn = parse_float_range(need_arg(&i, argc, argv, arg), arg, -100.0f, 100.0f);
             directional_steering_scale_set = true;
