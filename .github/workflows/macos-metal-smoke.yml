@@ -28,7 +28,8 @@ jobs:
 
       - name: Build binaries
         run: |
-          make -B ds4 ds4-bench
+          make clean
+          make -j3 ds4 ds4-bench NATIVE_CPU_FLAG=
           ls -lah ./ds4 ./ds4-bench
 
       - name: Check expert trace CLI flags
