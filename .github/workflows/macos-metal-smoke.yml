@@ -1,0 +1,35 @@
+name: macOS Metal Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag, or SHA to test
+        required: true
+        default: route-expert-trace
+
+permissions:
+  contents: read
+
+jobs:
+  metal:
+    runs-on: macos-15
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Show macOS and Metal device
+        run: |
+          sw_vers
+          uname -m
+          xcrun swift -e 'import Metal; print(MTLCreateSystemDefaultDevice()?.name ?? "NO_METAL")'
+
+      - name: Build Metal
+        run: make metal
+
+      - name: Check expert trace CLI flags
+        run: |
+          ./ds4 --help | grep -- --expert-trace
+          ./ds4-bench --help | grep -- --expert-trace
