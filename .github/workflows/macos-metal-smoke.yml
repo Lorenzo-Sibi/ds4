@@ -35,4 +35,4 @@ jobs:
       - name: Check expert trace CLI flags
         run: |
           ./ds4 --help | grep -- --expert-trace
-          ./ds4-bench --help | grep -- --expert-trace
+          ./ds4-bench --help runtime | grep -- --expert-trace
